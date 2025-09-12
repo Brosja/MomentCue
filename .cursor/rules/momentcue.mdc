@@ -1,0 +1,161 @@
+---
+description:
+
+Enforcement: Cursor (AI) must implement all items below automatically, and all pull requests (PRs) must pass the CI gates described before code is merged to main. Any failure prevents merge.
+
+1. High-level mandate
+
+1.1. The code must be production-grade, readable, maintainable, and secure.
+1.2. Never introduce “useless” code: no dead code, no unused imports/variables, no commented-out code in main branches, no leftover debug scaffolding.
+1.3. Every change must include tests (unit and/or integration) that prove the change works and that regressions are covered.
+1.4. All PRs must update relevant documentation and changelog entries.
+
+2. Tooling & automatic checks (required in every workspace/CI)
+
+2.1. Formatting: Run flutter format (or dart format) on all changed files. CI rejects merges if files are not formatted.
+2.2. Static analysis & lints: Run flutter analyze using flutter_lints (or an agreed linter config). Treat all warnings as failures for PRs. Configure analysis_options.yaml so that unused_import, unused_local_variable, dead_code, and avoid_print are treated as errors.
+2.3. Code style: Use conventional commits style for commit messages (e.g., feat:, fix:, chore:). CI checks commit messages and rejects non-conforming ones.
+2.4. Build generation check: Run flutter pub run build_runner build --delete-conflicting-outputs (or equivalent) in CI; any generated-code mismatch must fail the build.
+2.5. Dependency audit: Run dart pub outdated and a dependency vulnerability scan (e.g., snyk or GitHub Dependabot) as part of CI; blocking severity vulnerabilities must be resolved before production releases.
+2.6. Secrets scan: Run secret scanning tool on commits (no API keys, secrets, or credentials in code). Any secret found blocks the PR.
+2.7. Test suite: Run flutter test (unit + widget tests) and any integration tests in CI. PR must reach configured coverage thresholds (see §6).
+2.8. Performance & regression checks: Run lightweight performance checks (time to cold start, memory usage basic check) for major changes. Flag regressions >10%.
+
+3. Pre-commit & pre-push local hooks (developer machine)
+
+3.1. Install pre-commit hooks that run the following on changed files: dart format, flutter analyze (limited scope), flutter test (affected tests), and build_runner if generated files are changed.
+3.2. The hooks must refuse commits that include: TODOs marked // TODO: remove or // FIXME in production code, commented-out large code blocks, or debug print() statements.
+3.3. The hooks must check for accidental large binary files (>5MB) and block them; large assets must be added via the asset pipeline only.
+
+4. Pull Request requirements & gating
+
+4.1. All changes must be made on a feature branch; PR target must be develop or main depending on your branching policy.
+4.2. Each PR must include: (a) description of the change, (b) linked issue or ticket, (c) list of tests added/updated, (d) screenshots or short demo GIF/video for UI changes, (e) impact analysis on notifications/scheduling logic.
+4.3. PR must pass all CI checks listed in §2.
+4.4. PR must have at least one human reviewer and at least one automated code-review tool (linter, static analyzer) approval. For changes touching critical modules (scheduling engine, notifications, encryption/backup), require two human reviewers including at least one senior engineer or code owner.
+4.5. For security-sensitive changes (storage encryption, backup, Keychain/Keystore logic), require sign-off by a designated security owner.
+4.6. Merges must be fast-forward where possible; do not merge with unresolved conflicts or “work-in-progress” markers.
+
+5. Tests & coverage requirements
+
+5.1. Unit tests: For all new or modified domain logic (e.g., ScheduleService, RRULE parsing, sequence handling), provide thorough unit tests covering edge cases (DST, timezone changes, BYDAY rules, COUNT/UNTIL).
+5.2. Integration tests: For notification scheduling/rescheduling and persistence, provide integration tests that simulate scheduling, device restart (re-scheduling), and timezone changes. Use CI test harnesses and mocking as needed.
+5.3. E2E tests (for release merges): Simulate the full user flow: create check, schedule, receive notification, perform Done, confirm analytics state changes. Provide at least one automated E2E scenario for core flow.
+5.4. Coverage thresholds: Minimum 80% unit coverage on domain logic modules (ScheduleService, StorageService, NotificationService). Overall project coverage should be at least 70%. If thresholds cannot be met, the PR must include a written justification and a plan to address missing tests.
+5.5. Flaky tests: Any test failing intermittently must be marked flaky and fixed before merging significant changes. CI must track flaky tests and show historic failure rates.
+
+6. No “useless code” rules (static enforcement)
+
+6.1. Unused code: CI must fail on any unused_import, unused_local_variable, dead_code, or unreachable code flagged by analyser. These are treated as errors, not warnings.
+6.2. Commented blocks: Long commented-out code (>3 lines) in production files is forbidden. If a feature is experimental, place it behind a feature flag and keep code active, or move experimental code to a clearly named experimental branch.
+6.3. No duplicated logic: If code is duplicated, the reviewer must request refactor to share logic or extract helpers. Use duplication detection tools and maintain a duplication ratio below agreed threshold (e.g., <3% duplication in core modules).
+6.4. No dead feature flags: If feature flags are used, they must be documented and removed or folded within 3 sprints.
+
+7. Quality & architectural rules
+
+7.1. Separation of concerns: UI, domain logic, and services must be separated. The ScheduleService must not contain UI code.
+7.2. Immutable models & null-safety: Use Dart null-safety and prefer immutable models (use final, data classes). Avoid dynamic.
+7.3. Generated code policy: Generated files (from build_runner) must live in lib/src/gen or lib/gen and be clearly named; do not edit generated files manually — document regeneration steps in README. CI enforces generated files are current.
+7.4. Complexity limits: Enforce cyclomatic complexity <= 12 for functions in domain/services; functions above this must be refactored. Use static tools to measure complexity.
+7.5. Explicit error handling: Avoid catching broad exceptions. Any catch must either rethrow or wrap into a domain-specific error with logging. No silent failures.
+7.6. API of services: Service classes must expose small, well-documented public APIs. Methods must have doc comments describing inputs, outputs, side effects, and exceptions.
+
+8. Security & privacy rules
+
+8.1. Secrets & keys: No keys or secrets in code. Use platform Keychain/Keystore or environment variables. CI must scan for secrets in commits.
+8.2. Encryption: If encryption is used for Hive or backup, keys must be persisted in secure storage only and never logged or exfiltrated. Unit tests for encryption must validate correct behavior.
+8.3. Backup import/export: All export files must be password-protected AES-encrypted; import must validate password and integrity. Tests must assert that wrong passwords fail gracefully (no partial restore).
+8.4. Data minimization: Only store the minimal metadata required. Telemetry is opt-in only. If telemetry is added, offer a privacy toggle and collect only what is necessary, and log exact schema with opt-in confirmation.
+
+9. Release discipline & changelog
+
+9.1. Semantic versioning: Adopt SemVer. Tag releases with vMAJOR.MINOR.PATCH. CI should create changelog entries automatically from commit messages (Conventional Commits).
+9.2. Changelog: Each release must include a CHANGELOG.md entry describing user-visible changes, migration steps, and any breaking changes.
+9.3. Release checklist: Before publishing an app release, verify: updated privacy policy linked, screenshots updated, test suite green, security scan clean, and confirm no TODOs or FIXMEs remain.
+
+10. PR code review checklist (for reviewers)
+
+For each PR, reviewers must confirm:
+10.1. Linting & formatting pass.
+10.2. Tests added and passing; coverage thresholds met.
+10.3. No unused/dead/commented code.
+10.4. PR description explains purpose and links issue.
+10.5. Public APIs are documented; function/class docstrings present.
+10.6. Any platform changes (Android manifest, iOS entitlements) are reviewed for permissions and privacy impacts.
+10.7. Security: no secrets, correct key handling, proper encryption when required.
+10.8. UX: small demo video or screenshots for UI changes provided.
+10.9. Performance: no obvious regressions; large allocations or slow operations are avoided.
+10.10. Accessibility: semantic labels present and voiceover friendly.
+If any item fails, the reviewer must request changes and block merge.
+
+11. Change management & modifications policy
+
+11.1. Every change updates tests & docs: If you modify domain logic (scheduling rules, recurrence behavior, snooze logic), you must update SCHEDULE_SPEC.md and add/modify tests that prove the change. PRs missing spec updates are blocked.
+11.2. Major behavior changes require migration plan: Changes to the schedule model or storage schema must include a migration plan and migration code. Tests must validate migration works from previous stored data.
+11.3. Code owners & mandatory approvals: Files under lib/services/* and lib/models/* are owned by code owners; any change must be approved by owner. Add CODEOWNERS to repo.
+11.4. Deprecation policy: Deprecated functions/classes must be annotated and kept for one major version with migration notes; remove only after next major version and document the removal.
+
+12. Documentation & deliverables
+
+12.1. Every PR must update README if new developer commands are added.
+12.2. Maintain ARCHITECTURE.md, SCHEDULE_SPEC.md, LEGAL_CHECKLIST.md, DESIGN.md (or links to design assets). PRs affecting those areas must update the docs.
+12.3. Provide inline doc comments for all public functions and classes. Use dartdoc style.
+12.4. Provide a "how to test notifications on device" section in README for QA.
+
+13. CI enforcement policy (summary)
+
+CI must run the full pipeline on each PR: format -> analyze -> build-regenerate -> unit tests -> integration tests -> security scan -> coverage check -> artifact build.
+
+Any failure stops the merge and posts clear failure reasons.
+
+If builds succeed, PR may be merged after required human approvals.
+
+14. Exceptions & escalation
+
+14.1. If a PR cannot meet a rule (e.g., temporary lowered coverage for an urgent fix), the PR must include a written exception request with justification and remediation timeline. An authorized project lead must approve the exception and add a ticket to fix within one sprint.
+14.2. For security exceptions, require explicit security owner approval and immediate mitigation plan.
+
+15. Continuous improvement
+
+15.1. Every sprint retro includes a brief review of lint/data from CI (false positives, flaky tests, and analysis rules) and may propose adjustments to analysis_options.yaml or CI.
+15.2. Keep this Cursor Rule as a living document — any approved changes must be recorded in CONTRIBUTING.md.
+
+16. Operational commands for Cursor (to be automated)
+
+When Cursor receives a change request or generates code, it must execute this script sequence automatically (local & CI):
+
+dart format .
+
+flutter pub get
+
+flutter pub run build_runner build --delete-conflicting-outputs
+
+flutter analyze --no-fatal-infos (treat warnings as errors in CI config)
+
+flutter test --coverage
+
+Run coverage threshold checker (fail if below configured thresholds)
+
+Run dependency audit script (e.g., dart pub outdated and security scanner)
+
+Run secret scan (tooling such as git-secrets or GitHub actions)
+
+Produce artifact and attach logs & coverage report to PR.
+
+17. Final: acceptance for Cursor output
+
+Cursor must only mark a feature as complete if:
+
+All required tests pass and coverage thresholds are met.
+
+All CI checks in §2 pass.
+
+Documentation & changelog updated.
+
+Human reviewers sign-off as required (§4).
+
+No TODOs/FIXMEs remain in production files.
+Only then should the code be merged to main and included in any release.
+globs:
+alwaysApply: true
+---
