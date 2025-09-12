@@ -1,4 +1,4 @@
-import 'package:rrule/rrule.dart';
+import '../utils/rrule_parser.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:uuid/uuid.dart';
 

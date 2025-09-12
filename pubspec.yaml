@@ -34,8 +34,11 @@ dependencies:
   # Secure storage
   flutter_secure_storage: ^9.0.0
 
-  # RRULE parsing
-  rrule: ^0.2.15
+  # RRULE parsing (Note: may need alternative package)
+  # rrule: ^0.2.15
+  
+  # Crypto for encryption
+  crypto: ^3.0.3
 
   # Material design icons
   cupertino_icons: ^1.0.2
