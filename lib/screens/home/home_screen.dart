@@ -494,15 +494,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       MaterialPageRoute(
         builder: (context) => const AddCheckScreen(),
       ),
-    ).then((_) => _loadData());
+    ).then((result) {
+      if (result == true) {
+        _loadData();
+      }
+    });
   }
 
   void _navigateToCheckDetail(Check check) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => CheckDetailScreen(check: check),
+        builder: (context) => AddCheckScreen(checkToEdit: check),
       ),
-    ).then((_) => _loadData());
+    ).then((result) {
+      if (result == true) {
+        _loadData();
+      }
+    });
   }
 
   void _navigateToAnalytics() {
