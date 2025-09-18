@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MomentCue</string>
+    <string name="widget_description">Quick access to your health check-ins</string>
+    
+    <color name="white">#FFFFFFFF</color>
+</resources>

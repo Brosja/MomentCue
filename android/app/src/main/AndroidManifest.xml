@@ -11,7 +11,6 @@
 
     <application
         android:label="MomentCue"
-        android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         
         <activity
@@ -34,17 +33,32 @@
             </intent-filter>
         </activity>
 
-        <!-- Boot receiver for rescheduling notifications after device restart -->
+        <!-- WorkManager handles boot rescheduling internally; no explicit receiver needed -->
+
+        <!-- App Widget Provider -->
         <receiver
-            android:name=".BootReceiver"
+            android:name=".MomentCueWidgetProvider"
             android:enabled="true"
             android:exported="true">
-            <intent-filter android:priority="1000">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.example.momentcue.QUICK_CHECK" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/momentcue_widget_info" />
+        </receiver>
+
+        <!-- flutter_local_notifications receivers to ensure alarms fire and reschedule after reboot -->
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
+            android:exported="false" />
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"
+            android:exported="false">
+            <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-                <action android:name="android.intent.action.PACKAGE_REPLACED" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="package" />
             </intent-filter>
         </receiver>
 

@@ -11,6 +11,9 @@ class ScheduleService {
   static ScheduleService get instance => _instance ??= ScheduleService._();
   
   ScheduleService._();
+  
+  // Public constructor for dependency injection
+  ScheduleService();
 
   final TimeService _timeService = TimeService.instance;
 

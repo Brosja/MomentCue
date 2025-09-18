@@ -1,19 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-
-import '../../models/check.dart';
-import '../../models/schedule.dart';
-import '../../services/storage_service.dart';
-import '../../services/schedule_service.dart';
-import '../../services/time_service.dart';
 import '../../utils/app_theme.dart';
+import '../../models/simple_check.dart';
+import '../../services/simple_storage_service.dart';
 import '../check/add_check_screen.dart';
-import '../check/check_detail_screen.dart';
-import '../analytics/analytics_screen.dart';
 import '../settings/settings_screen.dart';
-import '../../widgets/check_card.dart';
-import '../../widgets/daily_progress_card.dart';
-import '../../widgets/upcoming_reminders_card.dart';
+import '../analytics/analytics_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -22,70 +13,37 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
-  late TabController _tabController;
-  List<Check> _checks = [];
-  List<ScheduleOccurrence> _todayOccurrences = [];
+  List<SimpleCheck> _checks = [];
   bool _isLoading = true;
+  final SimpleStorageService _storageService = SimpleStorageService.instance;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    _loadData();
+    _loadChecks();
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadData() async {
+  Future<void> _loadChecks() async {
+    setState(() {
+      _isLoading = true;
+    });
+    
     try {
-      final storageService = Provider.of<StorageService>(context, listen: false);
-      final scheduleService = Provider.of<ScheduleService>(context, listen: false);
-      final timeService = Provider.of<TimeService>(context, listen: false);
-
-      final allChecks = storageService.getActiveChecks();
-      final today = timeService.startOfDay(timeService.now());
-      final tomorrow = today.add(const Duration(days: 1));
-
-      final todayOccurrences = <ScheduleOccurrence>[];
-      
-      for (final check in allChecks) {
-        final occurrences = scheduleService.generateOccurrences(
-          check: check,
-          count: 10,
-          startFrom: today,
-        );
-        
-        todayOccurrences.addAll(
-          occurrences.where((occ) => 
-            occ.scheduledTime.isAfter(today) && 
-            occ.scheduledTime.isBefore(tomorrow)
-          ),
-        );
-      }
-
-      // Sort by scheduled time
-      todayOccurrences.sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
-
+      final checks = await _storageService.getChecks();
       setState(() {
-        _checks = allChecks;
-        _todayOccurrences = todayOccurrences;
+        _checks = checks;
         _isLoading = false;
       });
     } catch (e) {
       setState(() {
         _isLoading = false;
       });
-      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error loading data: $e'),
+            content: Text('Error loading checks: $e'),
             backgroundColor: AppTheme.errorColor,
           ),
         );
@@ -93,23 +51,30 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  Future<void> _refreshData() async {
-    setState(() {
-      _isLoading = true;
-    });
-    await _loadData();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: [
-          _buildHomeTab(),
-          _buildChecksTab(),
-        ],
+      backgroundColor: AppTheme.backgroundColor,
+      appBar: AppBar(
+        title: const Text(
+          'MomentCue',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        backgroundColor: AppTheme.primaryColor,
+        elevation: 0,
+        centerTitle: true,
       ),
+              body: IndexedStack(
+                index: _selectedIndex,
+                children: [
+                  _DashboardTab(checks: _checks, isLoading: _isLoading, onCheckTap: _editCheck, onCheckDelete: _deleteCheck),
+                  const AnalyticsScreen(),
+                  const SettingsScreen(),
+                ],
+              ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) {
@@ -118,14 +83,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           });
         },
         type: BottomNavigationBarType.fixed,
+        backgroundColor: Colors.white,
+        selectedItemColor: AppTheme.primaryColor,
+        unselectedItemColor: Colors.grey,
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.home),
-            label: 'Today',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.list),
-            label: 'Checks',
+            label: 'Home',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.analytics),
@@ -137,272 +101,368 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
         ],
       ),
-      floatingActionButton: _selectedIndex == 1
-          ? FloatingActionButton(
-              onPressed: () => _navigateToAddCheck(),
-              child: const Icon(Icons.add),
-            )
-          : null,
-    );
-  }
-
-  Widget _buildHomeTab() {
-    return CustomScrollView(
-      slivers: [
-        SliverAppBar(
-          expandedHeight: 120,
-          floating: true,
-          pinned: true,
-          backgroundColor: AppTheme.primaryColor,
-          flexibleSpace: FlexibleSpaceBar(
-            title: Text(
-              _getGreeting(),
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            background: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    AppTheme.primaryColor,
-                    AppTheme.primaryColorDark,
-                  ],
-                ),
-              ),
-            ),
-          ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh, color: Colors.white),
-              onPressed: _refreshData,
-            ),
-          ],
-        ),
-        SliverToBoxAdapter(
-          child: _isLoading
-              ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(32.0),
-                    child: CircularProgressIndicator(),
-                  ),
-                )
-              : Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      DailyProgressCard(
-                        occurrences: _todayOccurrences,
-                        onTap: () => _navigateToAnalytics(),
-                      ),
-                      const SizedBox(height: 16),
-                      UpcomingRemindersCard(
-                        occurrences: _todayOccurrences.take(5).toList(),
-                        onOccurrenceTap: _handleOccurrenceTap,
-                      ),
-                      const SizedBox(height: 16),
-                      _buildQuickActions(),
-                    ],
-                  ),
-                ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildChecksTab() {
-    return CustomScrollView(
-      slivers: [
-        const SliverAppBar(
-          title: Text('Your Checks'),
-          floating: true,
-          backgroundColor: AppTheme.primaryColor,
-          foregroundColor: Colors.white,
-        ),
-        SliverToBoxAdapter(
-          child: _isLoading
-              ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(32.0),
-                    child: CircularProgressIndicator(),
-                  ),
-                )
-              : _checks.isEmpty
-                  ? _buildEmptyState()
-                  : Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        children: [
-                          TabBar(
-                            controller: _tabController,
-                            labelColor: AppTheme.primaryColor,
-                            tabs: const [
-                              Tab(text: 'Active'),
-                              Tab(text: 'Categories'),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          SizedBox(
-                            height: MediaQuery.of(context).size.height * 0.6,
-                            child: TabBarView(
-                              controller: _tabController,
-                              children: [
-                                _buildActiveChecks(),
-                                _buildCategorizedChecks(),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildActiveChecks() {
-    return ListView.builder(
-      itemCount: _checks.length,
-      itemBuilder: (context, index) {
-        final check = _checks[index];
-        return CheckCard(
-          check: check,
-          onTap: () => _navigateToCheckDetail(check),
-          onToggle: (enabled) => _toggleCheck(check, enabled),
-        );
-      },
-    );
-  }
-
-  Widget _buildCategorizedChecks() {
-    final categorizedChecks = <CheckCategory, List<Check>>{};
-    
-    for (final check in _checks) {
-      categorizedChecks.putIfAbsent(check.category, () => []).add(check);
-    }
-
-    return ListView.builder(
-      itemCount: categorizedChecks.length,
-      itemBuilder: (context, index) {
-        final category = categorizedChecks.keys.elementAt(index);
-        final checksInCategory = categorizedChecks[category]!;
-        
-        return ExpansionTile(
-          title: Text(_getCategoryDisplayName(category)),
-          leading: Icon(_getCategoryIcon(category)),
-          children: checksInCategory.map((check) => CheckCard(
-            check: check,
-            onTap: () => _navigateToCheckDetail(check),
-            onToggle: (enabled) => _toggleCheck(check, enabled),
-          )).toList(),
-        );
-      },
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.health_and_safety,
-              size: 80,
-              color: Colors.grey[400],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No health checks yet',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: Colors.grey[600],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Create your first reminder to get started',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Colors.grey[500],
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: _navigateToAddCheck,
-              icon: const Icon(Icons.add),
-              label: const Text('Create Check'),
-            ),
-          ],
-        ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          _showAddCheckDialog();
+        },
+        backgroundColor: AppTheme.primaryColor,
+        child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }
 
-  Widget _buildQuickActions() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
+  void _showAddCheckDialog() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const AddCheckScreen(),
+      ),
+    ).then((result) {
+      if (result != null && result is SimpleCheck) {
+        _addCheck(result);
+      }
+    });
+  }
+
+  Future<void> _addCheck(SimpleCheck check) async {
+    try {
+      await _storageService.addCheck(check);
+      setState(() {
+        _checks.add(check);
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Added "${check.title}" to your checks!'),
+            backgroundColor: AppTheme.successColor,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving check: $e'),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _editCheck(SimpleCheck check) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddCheckScreen(editCheck: check),
+      ),
+    );
+    
+    if (result != null && result is SimpleCheck) {
+      try {
+        await _storageService.updateCheck(result);
+        setState(() {
+          final index = _checks.indexWhere((c) => c.id == result.id);
+          if (index != -1) {
+            _checks[index] = result;
+          }
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Updated "${result.title}"'),
+              backgroundColor: AppTheme.successColor,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error updating check: $e'),
+              backgroundColor: AppTheme.errorColor,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _deleteCheck(SimpleCheck check) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Check'),
+        content: Text('Are you sure you want to delete "${check.title}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.errorColor,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await _storageService.deleteCheck(check.id);
+        setState(() {
+          _checks.removeWhere((c) => c.id == check.id);
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Deleted "${check.title}"'),
+              backgroundColor: AppTheme.successColor,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error deleting check: $e'),
+              backgroundColor: AppTheme.errorColor,
+            ),
+          );
+        }
+      }
+    }
+  }
+}
+
+class _DashboardTab extends StatelessWidget {
+  final List<SimpleCheck> checks;
+  final bool isLoading;
+  final Function(SimpleCheck) onCheckTap;
+  final Function(SimpleCheck) onCheckDelete;
+
+  const _DashboardTab({
+    required this.checks, 
+    required this.isLoading,
+    required this.onCheckTap,
+    required this.onCheckDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoading) {
+      return const Center(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryColor),
+            ),
+            SizedBox(height: 16),
             Text(
-              'Quick Actions',
-              style: Theme.of(context).textTheme.titleMedium,
+              'Loading your checks...',
+              style: TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 16,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Welcome to MomentCue!',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: AppTheme.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Your personal wellness companion',
+            style: TextStyle(
+              fontSize: 16,
+              color: AppTheme.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 24),
+          if (checks.isEmpty) ...[
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Getting Started',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      '1. Tap the + button to add your first health check\n'
+                      '2. Set up reminders for your wellness routines\n'
+                      '3. Track your progress and build healthy habits',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () {
+                        // This will be handled by the floating action button
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Add Your First Check'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ] else ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Your Health Checks (${checks.length})',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    // This will be handled by the floating action button
+                  },
+                  child: const Text('Add More'),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
+                    ...checks.map((check) => _buildCheckCard(context, check)).toList(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCheckCard(BuildContext context, SimpleCheck check) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: InkWell(
+        onTap: () => onCheckTap(check),
+        onLongPress: () => _showCheckOptions(context, check),
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: check.enabled ? AppTheme.successColor : AppTheme.errorColor,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      check.title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    check.enabled ? Icons.check_circle : Icons.pause_circle,
+                    color: check.enabled ? AppTheme.successColor : AppTheme.errorColor,
+                    size: 20,
+                  ),
+                ],
+              ),
+            if (check.description != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                check.description!,
+                style: const TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildQuickActionButton(
-                  icon: Icons.add,
-                  label: 'Add Check',
-                  onTap: _navigateToAddCheck,
-                ),
-                _buildQuickActionButton(
-                  icon: Icons.analytics,
-                  label: 'Analytics',
-                  onTap: _navigateToAnalytics,
-                ),
-                _buildQuickActionButton(
-                  icon: Icons.settings,
-                  label: 'Settings',
-                  onTap: _navigateToSettings,
-                ),
+                _buildInfoChip(check.category, Icons.category),
+                const SizedBox(width: 8),
+                _buildInfoChip(check.scheduleType, Icons.schedule),
+                if (check.notificationsEnabled && check.notificationSchedules.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  _buildInfoChip('Notifications', Icons.notifications),
+                ],
               ],
             ),
           ],
         ),
       ),
+      ),
     );
   }
 
-  Widget _buildQuickActionButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
+  void _showCheckOptions(BuildContext context, SimpleCheck check) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 32,
-              color: AppTheme.primaryColor,
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text('Edit Check'),
+              onTap: () {
+                Navigator.pop(context);
+                onCheckTap(check);
+              },
             ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: Theme.of(context).textTheme.bodySmall,
+            ListTile(
+              leading: Icon(
+                check.enabled ? Icons.pause : Icons.play_arrow,
+                color: check.enabled ? AppTheme.warningColor : AppTheme.successColor,
+              ),
+              title: Text(check.enabled ? 'Disable' : 'Enable'),
+              onTap: () {
+                Navigator.pop(context);
+                // TODO: Toggle check enabled state
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete, color: AppTheme.errorColor),
+              title: const Text('Delete Check'),
+              onTap: () {
+                Navigator.pop(context);
+                onCheckDelete(check);
+              },
             ),
           ],
         ),
@@ -410,121 +470,97 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  String _getGreeting() {
-    final hour = DateTime.now().hour;
-    if (hour < 12) {
-      return 'Good Morning';
-    } else if (hour < 17) {
-      return 'Good Afternoon';
-    } else {
-      return 'Good Evening';
-    }
-  }
-
-  String _getCategoryDisplayName(CheckCategory category) {
-    switch (category) {
-      case CheckCategory.hydration:
-        return 'Hydration';
-      case CheckCategory.posture:
-        return 'Posture';
-      case CheckCategory.medication:
-        return 'Medication';
-      case CheckCategory.screenBreak:
-        return 'Screen Breaks';
-      case CheckCategory.breathing:
-        return 'Breathing';
-      case CheckCategory.exercise:
-        return 'Exercise';
-      case CheckCategory.custom:
-        return 'Custom';
-    }
-  }
-
-  IconData _getCategoryIcon(CheckCategory category) {
-    switch (category) {
-      case CheckCategory.hydration:
-        return Icons.water_drop;
-      case CheckCategory.posture:
-        return Icons.accessibility_new;
-      case CheckCategory.medication:
-        return Icons.medication;
-      case CheckCategory.screenBreak:
-        return Icons.remove_red_eye;
-      case CheckCategory.breathing:
-        return Icons.air;
-      case CheckCategory.exercise:
-        return Icons.fitness_center;
-      case CheckCategory.custom:
-        return Icons.star;
-    }
-  }
-
-  void _handleOccurrenceTap(ScheduleOccurrence occurrence) {
-    final check = _checks.firstWhere(
-      (c) => c.id == occurrence.checkId,
-      orElse: () => _checks.first,
-    );
-    _navigateToCheckDetail(check);
-  }
-
-  Future<void> _toggleCheck(Check check, bool enabled) async {
-    try {
-      final storageService = Provider.of<StorageService>(context, listen: false);
-      check.enabled = enabled;
-      await storageService.saveCheck(check);
-      await _loadData();
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(enabled ? 'Check enabled' : 'Check disabled'),
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error updating check: $e'),
-          backgroundColor: AppTheme.errorColor,
-        ),
-      );
-    }
-  }
-
-  void _navigateToAddCheck() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => const AddCheckScreen(),
+  Widget _buildInfoChip(String label, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
       ),
-    ).then((result) {
-      if (result == true) {
-        _loadData();
-      }
-    });
-  }
-
-  void _navigateToCheckDetail(Check check) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => AddCheckScreen(checkToEdit: check),
-      ),
-    ).then((result) {
-      if (result == true) {
-        _loadData();
-      }
-    });
-  }
-
-  void _navigateToAnalytics() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => const AnalyticsScreen(),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppTheme.primaryColor),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppTheme.primaryColor,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }
+}
 
-  void _navigateToSettings() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => const SettingsScreen(),
+class _AnalyticsTab extends StatelessWidget {
+  const _AnalyticsTab();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.analytics,
+            size: 64,
+            color: AppTheme.primaryColor,
+          ),
+          SizedBox(height: 16),
+          Text(
+            'Analytics Coming Soon',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Track your wellness journey with detailed insights',
+            style: TextStyle(
+              color: AppTheme.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsTab extends StatelessWidget {
+  const _SettingsTab();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.settings,
+            size: 64,
+            color: AppTheme.primaryColor,
+          ),
+          SizedBox(height: 16),
+          Text(
+            'Settings Coming Soon',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Customize your MomentCue experience',
+            style: TextStyle(
+              color: AppTheme.textSecondary,
+            ),
+          ),
+        ],
       ),
     );
   }

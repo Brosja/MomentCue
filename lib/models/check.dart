@@ -1,5 +1,6 @@
 import 'package:hive/hive.dart';
 import 'package:uuid/uuid.dart';
+import 'schedule.dart';
 
 part 'check.g.dart';
 
@@ -187,25 +188,7 @@ enum CheckCategory {
   custom,
 }
 
-@HiveType(typeId: 2)
-enum ScheduleType {
-  @HiveField(0)
-  oneTime,
-  @HiveField(1)
-  daily,
-  @HiveField(2)
-  weekdays,
-  @HiveField(3)
-  weekly,
-  @HiveField(4)
-  monthly,
-  @HiveField(5)
-  yearly,
-  @HiveField(6)
-  rrule,
-  @HiveField(7)
-  sequence,
-}
+// ScheduleType is now imported from schedule.dart
 
 @HiveType(typeId: 3)
 class SnoozePolicy extends HiveObject {

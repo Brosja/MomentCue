@@ -1,22 +1,16 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-
-import '../../models/check.dart';
-import '../../models/schedule.dart';
-import '../../services/storage_service.dart';
-import '../../services/schedule_service.dart';
+import 'package:uuid/uuid.dart';
+import '../../models/simple_check.dart';
 import '../../utils/app_theme.dart';
-import '../../widgets/schedule_picker.dart';
-import '../../widgets/category_selector.dart';
-import '../../widgets/snooze_policy_editor.dart';
+import '../../widgets/notification_schedule_builder.dart';
+import '../../models/notification_schedule.dart';
+import '../../services/notification_service.dart';
 
 class AddCheckScreen extends StatefulWidget {
-  final Check? checkToEdit;
-
-  const AddCheckScreen({
-    super.key,
-    this.checkToEdit,
-  });
+  final SimpleCheck? editCheck;
+  
+  const AddCheckScreen({super.key, this.editCheck});
 
   @override
   State<AddCheckScreen> createState() => _AddCheckScreenState();
@@ -27,39 +21,32 @@ class _AddCheckScreenState extends State<AddCheckScreen> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   
-  CheckCategory _selectedCategory = CheckCategory.hydration;
-  ScheduleType _scheduleType = ScheduleType.daily;
-  Map<String, dynamic> _scheduleData = {};
-  String? _rruleString;
-  SnoozePolicy _snoozePolicy = SnoozePolicy.defaultPolicy();
-  bool _isLoading = false;
+  String _selectedCategory = CheckCategory.categories[0];
+  String _selectedScheduleType = CheckScheduleType.types[0];
+  bool _isEnabled = true;
+  bool _notificationsEnabled = false;
+  List<NotificationSchedule> _notificationSchedules = [];
+  bool _allowSnooze = true;
+  int _maxSnoozes = 3;
 
   @override
   void initState() {
     super.initState();
-    if (widget.checkToEdit != null) {
-      _loadExistingCheck();
-    } else {
-      _setDefaultSchedule();
+    if (widget.editCheck != null) {
+      _loadCheckData(widget.editCheck!);
     }
   }
 
-  void _loadExistingCheck() {
-    final check = widget.checkToEdit!;
+  void _loadCheckData(SimpleCheck check) {
     _titleController.text = check.title;
     _descriptionController.text = check.description ?? '';
     _selectedCategory = check.category;
-    _scheduleType = check.scheduleType;
-    _scheduleData = check.scheduleData ?? {};
-    _rruleString = check.rruleString;
-    _snoozePolicy = check.snoozePolicy;
-  }
-
-  void _setDefaultSchedule() {
-    _scheduleData = {
-      'type': 'daily',
-      'time': {'hour': 9, 'minute': 0},
-    };
+    _selectedScheduleType = check.scheduleType;
+    _isEnabled = check.enabled;
+    _notificationsEnabled = check.notificationsEnabled;
+    _notificationSchedules = List.from(check.notificationSchedules);
+    _allowSnooze = check.allowSnooze;
+    _maxSnoozes = check.maxSnoozes;
   }
 
   @override
@@ -71,47 +58,58 @@ class _AddCheckScreenState extends State<AddCheckScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isEditing = widget.checkToEdit != null;
-    
     return Scaffold(
+      backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
-        title: Text(isEditing ? 'Edit Check' : 'Add Check'),
+        title: Text(
+          widget.editCheck != null ? 'Edit Health Check' : 'Add Health Check',
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
         backgroundColor: AppTheme.primaryColor,
-        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.close, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
         actions: [
           TextButton(
-            onPressed: _isLoading ? null : _saveCheck,
-            child: Text(
+            onPressed: _saveCheck,
+            child: const Text(
               'Save',
               style: TextStyle(
                 color: Colors.white,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
               ),
             ),
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Form(
-              key: _formKey,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  _buildBasicInfo(),
-                  const SizedBox(height: 24),
-                  _buildCategorySection(),
-                  const SizedBox(height: 24),
-                  _buildScheduleSection(),
-                  const SizedBox(height: 24),
-                  _buildSnoozePolicySection(),
-                  const SizedBox(height: 24),
-                  _buildPreviewSection(),
-                  const SizedBox(height: 32),
-                  if (!_isLoading) _buildActionButtons(isEditing),
-                ],
-              ),
-            ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildBasicInfo(),
+              const SizedBox(height: 24),
+              _buildCategorySection(),
+              const SizedBox(height: 24),
+              _buildScheduleSection(),
+              const SizedBox(height: 24),
+              _buildEnabledSection(),
+              const SizedBox(height: 24),
+              _buildNotificationSection(),
+              const SizedBox(height: 32),
+              _buildPreviewSection(),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -122,18 +120,21 @@ class _AddCheckScreenState extends State<AddCheckScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            const Text(
               'Basic Information',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textPrimary,
               ),
             ),
             const SizedBox(height: 16),
             TextFormField(
               controller: _titleController,
               decoration: const InputDecoration(
-                labelText: 'Title *',
-                hintText: 'e.g., Drink Water',
+                labelText: 'Check Title *',
+                hintText: 'e.g., Drink Water, Take Medication',
+                border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.title),
               ),
               validator: (value) {
@@ -147,8 +148,9 @@ class _AddCheckScreenState extends State<AddCheckScreen> {
             TextFormField(
               controller: _descriptionController,
               decoration: const InputDecoration(
-                labelText: 'Description (optional)',
-                hintText: 'e.g., Stay hydrated throughout the day',
+                labelText: 'Description (Optional)',
+                hintText: 'Add a note or reminder...',
+                border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.description),
               ),
               maxLines: 3,
@@ -166,18 +168,31 @@ class _AddCheckScreenState extends State<AddCheckScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            const Text(
               'Category',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textPrimary,
               ),
             ),
             const SizedBox(height: 16),
-            CategorySelector(
-              selectedCategory: _selectedCategory,
-              onCategorySelected: (category) {
+            DropdownButtonFormField<String>(
+              value: _selectedCategory,
+              decoration: const InputDecoration(
+                labelText: 'Select Category',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.category),
+              ),
+              items: CheckCategory.categories.map((category) {
+                return DropdownMenuItem(
+                  value: category,
+                  child: Text(category),
+                );
+              }).toList(),
+              onChanged: (value) {
                 setState(() {
-                  _selectedCategory = category;
+                  _selectedCategory = value!;
                 });
               },
             ),
@@ -194,22 +209,31 @@ class _AddCheckScreenState extends State<AddCheckScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            const Text(
               'Schedule',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textPrimary,
               ),
             ),
             const SizedBox(height: 16),
-            SchedulePicker(
-              scheduleType: _scheduleType,
-              scheduleData: _scheduleData,
-              rruleString: _rruleString,
-              onScheduleChanged: (type, data, rrule) {
+            DropdownButtonFormField<String>(
+              value: _selectedScheduleType,
+              decoration: const InputDecoration(
+                labelText: 'How often?',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.schedule),
+              ),
+              items: CheckScheduleType.types.map((type) {
+                return DropdownMenuItem(
+                  value: type,
+                  child: Text(type),
+                );
+              }).toList(),
+              onChanged: (value) {
                 setState(() {
-                  _scheduleType = type;
-                  _scheduleData = data;
-                  _rruleString = rrule;
+                  _selectedScheduleType = value!;
                 });
               },
             ),
@@ -219,317 +243,212 @@ class _AddCheckScreenState extends State<AddCheckScreen> {
     );
   }
 
-  Widget _buildSnoozePolicySection() {
+  Widget _buildEnabledSection() {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Text(
-              'Snooze Settings',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+            const Icon(Icons.toggle_on, color: AppTheme.primaryColor),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Enable this check',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
-            const SizedBox(height: 16),
-            SnoozePolicyEditor(
-              snoozePolicy: _snoozePolicy,
-              onChanged: (policy) {
+            Switch(
+              value: _isEnabled,
+              onChanged: (value) {
                 setState(() {
-                  _snoozePolicy = policy;
+                  _isEnabled = value;
                 });
               },
+              activeColor: AppTheme.primaryColor,
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildNotificationSection() {
+    return Column(
+      children: [
+        NotificationScheduleBuilder(
+          initialSchedule: _notificationSchedules.isNotEmpty ? _notificationSchedules.first : null,
+          onChanged: (schedule) {
+            setState(() {
+              _notificationSchedules = [schedule];
+              _notificationsEnabled = schedule.isEnabled;
+            });
+          },
+        ),
+        const SizedBox(height: 16),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.snooze, color: AppTheme.primaryColor),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Snooze Settings',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                    ),
+                    Switch(
+                      value: _allowSnooze,
+                      onChanged: (value) {
+                        setState(() {
+                          _allowSnooze = value;
+                        });
+                      },
+                      activeColor: AppTheme.primaryColor,
+                    ),
+                  ],
+                ),
+                if (_allowSnooze) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Text('Max snoozes:'),
+                      const SizedBox(width: 12),
+                      DropdownButton<int>(
+                        value: _maxSnoozes,
+                        items: [1, 2, 3, 5, 10].map((count) {
+                          return DropdownMenuItem(
+                            value: count,
+                            child: Text('$count'),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _maxSnoozes = value!;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildPreviewSection() {
     return Card(
-      color: AppTheme.primaryColor.withOpacity(0.05),
+      color: AppTheme.primaryColor.withOpacity(0.1),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.preview,
-                  color: AppTheme.primaryColor,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Preview',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.primaryColor,
-                  ),
-                ),
-              ],
+            const Text(
+              'Preview',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.primaryColor,
+              ),
             ),
             const SizedBox(height: 12),
             Text(
-              _getScheduleDescription(),
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Next 3 occurrences:',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+              'Title: ${_titleController.text.isEmpty ? "Your check title" : _titleController.text}',
+              style: const TextStyle(fontWeight: FontWeight.w500),
             ),
             const SizedBox(height: 4),
-            ..._getPreviewOccurrences().map((date) => Padding(
-              padding: const EdgeInsets.only(left: 16, top: 2),
-              child: Text(
-                '• ${_formatPreviewDate(date)}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppTheme.textSecondary,
-                ),
+            Text(
+              'Category: $_selectedCategory',
+              style: const TextStyle(color: AppTheme.textSecondary),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Schedule: $_selectedScheduleType',
+              style: const TextStyle(color: AppTheme.textSecondary),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Status: ${_isEnabled ? "Enabled" : "Disabled"}',
+              style: TextStyle(
+                color: _isEnabled ? AppTheme.successColor : AppTheme.errorColor,
+                fontWeight: FontWeight.w500,
               ),
-            )),
+            ),
+            if (_notificationsEnabled && _notificationSchedules.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Notifications: ${_notificationSchedules.first.displayText}',
+                style: const TextStyle(color: AppTheme.textSecondary),
+              ),
+              if (_allowSnooze) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Snooze: Up to $_maxSnoozes times',
+                  style: const TextStyle(color: AppTheme.textSecondary),
+                ),
+              ],
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildActionButtons(bool isEditing) {
-    return Column(
-      children: [
-        ElevatedButton(
-          onPressed: _saveCheck,
-          style: ElevatedButton.styleFrom(
-            minimumSize: const Size(double.infinity, 56),
-          ),
-          child: Text(isEditing ? 'Update Check' : 'Create Check'),
-        ),
-        if (isEditing) ...[
-          const SizedBox(height: 12),
-          OutlinedButton(
-            onPressed: _deleteCheck,
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size(double.infinity, 56),
-              foregroundColor: AppTheme.errorColor,
-              side: const BorderSide(color: AppTheme.errorColor),
-            ),
-            child: const Text('Delete Check'),
-          ),
-        ],
-      ],
-    );
-  }
-
-  String _getScheduleDescription() {
-    final tempCheck = Check(
-      title: _titleController.text.isNotEmpty ? _titleController.text : 'New Check',
-      category: _selectedCategory,
-      scheduleType: _scheduleType,
-      scheduleData: _scheduleData,
-      rruleString: _rruleString,
-    );
-    
-    return Provider.of<ScheduleService>(context, listen: false)
-        .getScheduleDescription(tempCheck);
-  }
-
-  List<DateTime> _getPreviewOccurrences() {
-    try {
-      final tempCheck = Check(
-        title: _titleController.text.isNotEmpty ? _titleController.text : 'New Check',
-        category: _selectedCategory,
-        scheduleType: _scheduleType,
-        scheduleData: _scheduleData,
-        rruleString: _rruleString,
-      );
-      
-      return Provider.of<ScheduleService>(context, listen: false)
-          .previewOccurrences(check: tempCheck, count: 3);
-    } catch (e) {
-      return [];
-    }
-  }
-
-  String _formatPreviewDate(DateTime date) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final tomorrow = today.add(const Duration(days: 1));
-    final dateOnly = DateTime(date.year, date.month, date.day);
-    
-    String dateStr;
-    if (dateOnly == today) {
-      dateStr = 'Today';
-    } else if (dateOnly == tomorrow) {
-      dateStr = 'Tomorrow';
-    } else {
-      dateStr = '${date.day}/${date.month}/${date.year}';
-    }
-    
-    final timeStr = '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
-    return '$dateStr at $timeStr';
-  }
-
   Future<void> _saveCheck() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      final storageService = Provider.of<StorageService>(context, listen: false);
-      
-      final check = widget.checkToEdit?.copyWith(
+    if (_formKey.currentState!.validate()) {
+      final check = SimpleCheck(
+        id: widget.editCheck?.id ?? const Uuid().v4(),
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim().isEmpty 
             ? null 
             : _descriptionController.text.trim(),
         category: _selectedCategory,
-        scheduleType: _scheduleType,
-        scheduleData: _scheduleData,
-        rruleString: _rruleString,
-        snoozePolicy: _snoozePolicy,
-      ) ?? Check(
-        title: _titleController.text.trim(),
-        description: _descriptionController.text.trim().isEmpty 
-            ? null 
-            : _descriptionController.text.trim(),
-        category: _selectedCategory,
-        scheduleType: _scheduleType,
-        scheduleData: _scheduleData,
-        rruleString: _rruleString,
-        snoozePolicy: _snoozePolicy,
+        scheduleType: _selectedScheduleType,
+        enabled: _isEnabled,
+        createdAt: widget.editCheck?.createdAt ?? DateTime.now(),
+        notificationsEnabled: _notificationsEnabled,
+        notificationSchedules: _notificationSchedules,
+        allowSnooze: _allowSnooze,
+        maxSnoozes: _maxSnoozes,
       );
 
-      await storageService.saveCheck(check);
+      // Schedule notifications if enabled
+      if (check.notificationsEnabled) {
+        try {
+          await NotificationService().scheduleCheckNotifications(check);
+        } catch (e) {
+          if (kDebugMode) {
+            print('Error scheduling notifications: $e');
+          }
+        }
+      }
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(widget.checkToEdit != null 
-                ? 'Check updated successfully!' 
-                : 'Check created successfully!'),
-            backgroundColor: AppTheme.successColor,
-          ),
-        );
-        Navigator.of(context).pop(true);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error saving check: $e'),
-            backgroundColor: AppTheme.errorColor,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Health check "${check.title}" created successfully!'),
+          backgroundColor: AppTheme.successColor,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+
+      // Return the check to the previous screen
+      Navigator.pop(context, check);
     }
-  }
-
-  Future<void> _deleteCheck() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Check'),
-        content: const Text('Are you sure you want to delete this check? This action cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.errorColor,
-            ),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true && widget.checkToEdit != null) {
-      setState(() {
-        _isLoading = true;
-      });
-
-      try {
-        final storageService = Provider.of<StorageService>(context, listen: false);
-        await storageService.deleteCheck(widget.checkToEdit!.id);
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Check deleted successfully!'),
-              backgroundColor: AppTheme.successColor,
-            ),
-          );
-          Navigator.of(context).pop(true);
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error deleting check: $e'),
-              backgroundColor: AppTheme.errorColor,
-            ),
-          );
-        }
-      } finally {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-        }
-      }
-    }
-  }
-}
-
-extension CheckCopyWith on Check {
-  Check copyWith({
-    String? title,
-    String? description,
-    CheckCategory? category,
-    ScheduleType? scheduleType,
-    Map<String, dynamic>? scheduleData,
-    String? rruleString,
-    bool? enabled,
-    SnoozePolicy? snoozePolicy,
-  }) {
-    return Check(
-      id: id,
-      title: title ?? this.title,
-      description: description ?? this.description,
-      category: category ?? this.category,
-      scheduleType: scheduleType ?? this.scheduleType,
-      scheduleData: scheduleData ?? this.scheduleData,
-      rruleString: rruleString ?? this.rruleString,
-      enabled: enabled ?? this.enabled,
-      snoozePolicy: snoozePolicy ?? this.snoozePolicy,
-      createdAt: createdAt,
-      updatedAt: DateTime.now(),
-      analytics: analytics,
-      iconName: iconName,
-      colorValue: colorValue,
-      tags: tags,
-      isArchived: isArchived,
-      pausedRanges: pausedRanges,
-      skippedOccurrences: skippedOccurrences,
-    );
   }
 }

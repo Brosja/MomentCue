@@ -283,7 +283,7 @@ enum OccurrenceStatus {
 
 // Preset schedule configurations
 class PresetSchedules {
-  static Map<String, dynamic> daily({required TimeOfDay time}) {
+  static Map<String, dynamic> daily({required ScheduleTime time}) {
     return {
       'type': 'daily',
       'time': {
@@ -293,7 +293,7 @@ class PresetSchedules {
     };
   }
 
-  static Map<String, dynamic> weekdays({required TimeOfDay time}) {
+  static Map<String, dynamic> weekdays({required ScheduleTime time}) {
     return {
       'type': 'weekdays',
       'time': {
@@ -305,7 +305,7 @@ class PresetSchedules {
   }
 
   static Map<String, dynamic> weekly({
-    required TimeOfDay time,
+    required ScheduleTime time,
     required List<int> weekdays,
   }) {
     return {
@@ -319,7 +319,7 @@ class PresetSchedules {
   }
 
   static Map<String, dynamic> monthly({
-    required TimeOfDay time,
+    required ScheduleTime time,
     int? dayOfMonth,
     int? weekOfMonth,
     int? dayOfWeek,
@@ -337,7 +337,7 @@ class PresetSchedules {
   }
 
   static Map<String, dynamic> yearly({
-    required TimeOfDay time,
+    required ScheduleTime time,
     required int month,
     required int day,
   }) {
@@ -353,16 +353,16 @@ class PresetSchedules {
   }
 }
 
-class TimeOfDay {
+class ScheduleTime {
   final int hour;
   final int minute;
 
-  const TimeOfDay({required this.hour, required this.minute});
+  const ScheduleTime({required this.hour, required this.minute});
 
   Map<String, int> toJson() => {'hour': hour, 'minute': minute};
 
-  factory TimeOfDay.fromJson(Map<String, dynamic> json) {
-    return TimeOfDay(hour: json['hour'], minute: json['minute']);
+  factory ScheduleTime.fromJson(Map<String, dynamic> json) {
+    return ScheduleTime(hour: json['hour'], minute: json['minute']);
   }
 
   @override
