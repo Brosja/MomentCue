@@ -12,6 +12,12 @@ import '../models/notification_schedule.dart';
 import '../models/notification_sound.dart';
 import 'simple_storage_service.dart';
 
+class _ParsedIds {
+  final String checkId;
+  final String? scheduleId;
+  _ParsedIds({required this.checkId, this.scheduleId});
+}
+
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
@@ -1195,28 +1201,76 @@ class NotificationService {
     }
   }
 
-  void _handleDoneAction(String? payload) {
-    // Mark check as completed
+  void _handleDoneAction(String? payload) async {
     if (kDebugMode) {
       print('Check marked as done: $payload');
     }
-    // TODO: Update check completion status in storage
+    if (payload == null) return;
+    final ids = _parseIds(payload);
+    if (ids == null) return;
+    final checks = await SimpleStorageService.instance.getChecks();
+    final idx = checks.indexWhere((c) => c.id == ids.checkId);
+    if (idx == -1) return;
+    // For now, simply cancel pending notifications for this check occurrence
+    await cancelCheckNotifications(ids.checkId);
   }
 
-  void _handleSnoozeAction(String? payload) {
-    // Snooze the notification for 15 minutes
+  void _handleSnoozeAction(String? payload) async {
     if (kDebugMode) {
       print('Check snoozed: $payload');
     }
-    // TODO: Implement snooze logic
+    if (payload == null) return;
+    final ids = _parseIds(payload);
+    if (ids == null) return;
+    final checks = await SimpleStorageService.instance.getChecks();
+    final check = checks.firstWhere((c) => c.id == ids.checkId, orElse: () => checks.first);
+    // Schedule a one-off 15-minute snooze
+    final androidDetails = AndroidNotificationDetails(
+      'momentcue_checks_alarms',
+      'Health Check Alarms',
+      channelDescription: 'Alarm-style reminders for your health checks',
+      importance: Importance.max,
+      priority: Priority.max,
+      showWhen: true,
+      enableVibration: true,
+      playSound: _selectedSound.id != 'none',
+      fullScreenIntent: false,
+      sound: _selectedSound.soundPath != null 
+          ? RawResourceAndroidNotificationSound(_selectedSound.soundPath!.replaceAll('sounds/', '').replaceAll('.wav', ''))
+          : null,
+      vibrationPattern: Int64List.fromList([0, 250, 250, 250, 500, 250]),
+      category: AndroidNotificationCategory.alarm,
+      audioAttributesUsage: AudioAttributesUsage.alarm,
+      channelAction: AndroidNotificationChannelAction.createIfNotExists,
+    );
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      sound: 'default',
+    );
+    final details = NotificationDetails(android: androidDetails, iOS: iosDetails);
+    final when = tz.TZDateTime.now(tz.local).add(const Duration(minutes: 15));
+    await _notifications.zonedSchedule(
+      _generateNotificationId(ids.checkId, 'snooze_${ids.scheduleId ?? '0'}'),
+      check.title,
+      check.description ?? 'Snoozed reminder',
+      when,
+      details,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      payload: 'check_${ids.checkId}_schedule_${ids.scheduleId ?? 'snooze'}',
+    );
   }
 
-  void _handleSkipAction(String? payload) {
-    // Skip this occurrence
+  void _handleSkipAction(String? payload) async {
     if (kDebugMode) {
       print('Check skipped: $payload');
     }
-    // TODO: Update check skip status
+    if (payload == null) return;
+    final ids = _parseIds(payload);
+    if (ids == null) return;
+    // Skip current occurrence: just cancel pending for this check; normal schedule will pick next
+    await cancelCheckNotifications(ids.checkId);
   }
 
   void _handleDefaultAction(String? payload) {
@@ -1225,6 +1279,23 @@ class NotificationService {
       print('Notification opened: $payload');
     }
     // TODO: Navigate to check details
+  }
+
+  _ParsedIds? _parseIds(String payload) {
+    try {
+      // Formats: 'check_<checkId>_schedule_<scheduleId>' or 'debug_check' etc.
+      if (!payload.startsWith('check_')) return null;
+      final parts = payload.split('_');
+      if (parts.length < 2) return null;
+      final checkId = parts[1];
+      String? scheduleId;
+      if (parts.length >= 4 && parts[2] == 'schedule') {
+        scheduleId = parts[3];
+      }
+      return _ParsedIds(checkId: checkId, scheduleId: scheduleId);
+    } catch (_) {
+      return null;
+    }
   }
 }
 

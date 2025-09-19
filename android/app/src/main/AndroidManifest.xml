@@ -69,7 +69,4 @@
             android:value="2" />
     </application>
     
-    <!-- Required for packages that make calls to http:// endpoints on Android 9+ -->
-    <uses-permission android:name="android.permission.INTERNET" />
-    
 </manifest>

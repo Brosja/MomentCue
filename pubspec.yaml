@@ -33,7 +33,7 @@ dependencies:
   uuid: ^3.0.7
 
   # Secure storage
-  flutter_secure_storage: ^9.0.0
+  flutter_secure_storage: ^9.2.4
 
   # RRULE parsing (Note: may need alternative package)
   # rrule: ^0.2.15
@@ -71,6 +71,7 @@ dependencies:
   # Flutter localizations
   flutter_localizations:
     sdk: flutter
+  cryptography: ^2.7.0
 
 dev_dependencies:
   flutter_test:

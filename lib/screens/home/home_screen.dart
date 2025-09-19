@@ -70,7 +70,7 @@ class _HomeScreenState extends State<HomeScreen> {
               body: IndexedStack(
                 index: _selectedIndex,
                 children: [
-                  _DashboardTab(checks: _checks, isLoading: _isLoading, onCheckTap: _editCheck, onCheckDelete: _deleteCheck),
+                  _DashboardTab(checks: _checks, isLoading: _isLoading, onCheckTap: _editCheck, onCheckDelete: _deleteCheck, onToggleEnabled: _toggleCheckEnabled),
                   const AnalyticsScreen(),
                   const SettingsScreen(),
                 ],
@@ -236,6 +236,48 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
   }
+
+  Future<void> _toggleCheckEnabled(SimpleCheck check) async {
+    final updated = SimpleCheck(
+      id: check.id,
+      title: check.title,
+      description: check.description,
+      category: check.category,
+      scheduleType: check.scheduleType,
+      enabled: !check.enabled,
+      createdAt: check.createdAt,
+      notificationsEnabled: check.notificationsEnabled,
+      notificationSchedules: check.notificationSchedules,
+      allowSnooze: check.allowSnooze,
+      maxSnoozes: check.maxSnoozes,
+    );
+    try {
+      await _storageService.updateCheck(updated);
+      setState(() {
+        final index = _checks.indexWhere((c) => c.id == check.id);
+        if (index != -1) {
+          _checks[index] = updated;
+        }
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(updated.enabled ? 'Enabled "${updated.title}"' : 'Disabled "${updated.title}"'),
+            backgroundColor: updated.enabled ? AppTheme.successColor : AppTheme.warningColor,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update: $e'),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
+    }
+  }
 }
 
 class _DashboardTab extends StatelessWidget {
@@ -243,12 +285,14 @@ class _DashboardTab extends StatelessWidget {
   final bool isLoading;
   final Function(SimpleCheck) onCheckTap;
   final Function(SimpleCheck) onCheckDelete;
+  final Function(SimpleCheck) onToggleEnabled;
 
   const _DashboardTab({
     required this.checks, 
     required this.isLoading,
     required this.onCheckTap,
     required this.onCheckDelete,
+    required this.onToggleEnabled,
   });
 
   @override
@@ -453,7 +497,7 @@ class _DashboardTab extends StatelessWidget {
               title: Text(check.enabled ? 'Disable' : 'Enable'),
               onTap: () {
                 Navigator.pop(context);
-                // TODO: Toggle check enabled state
+                onToggleEnabled(check);
               },
             ),
             ListTile(
